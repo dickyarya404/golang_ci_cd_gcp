@@ -1,0 +1,69 @@
+name: running test, build docker image, push to docker hub, and deploy
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  running-test:
+    name: running test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v4
+        with:
+          go-version: '1.20'
+      - name: run test
+        run: go test -v ./... -cover
+
+  build-image:
+    name: build docker image
+    runs-on: ubuntu-latest
+    needs: 
+      - running-test
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+      - name: Create .env file
+        run: |
+          echo "DB_HOST=${{ secrets.DB_HOST }}" >> .env
+          echo "DB_PORT=${{ secrets.DB_PORT }}" >> .env
+          echo "DB_USERNAME=${{ secrets.DB_USERNAME }}" >> .env
+          echo "DB_PASSWORD=${{ secrets.DB_PASSWORD }}" >> .env
+          echo "DB_NAME=${{ secrets.DB_NAME }}" >> .env
+      - name: build docker image
+        run: docker build -t mhmmdrizki/alta-ci-cd:latest .
+      - name: login to docker hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_PASSWORD }}
+      - name: push image
+        run: docker push mhmmdrizki/alta-ci-cd:latest
+
+  deploy-to-ec2:
+    name: deploy to ec2
+    runs-on: ubuntu-latest
+    needs: build-image
+    steps:
+      - uses: actions/checkout@v4
+      - name: deploy to ec2
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          script: |
+            cd /home/ec2-user/alta
+
+            if docker ps -a --format '{{.Names}}' | grep -Eq '^alta-ci-cd$'; then
+              echo "Container alta-ci-cd already exists."
+              docker stop alta-ci-cd
+              docker rm alta-ci-cd
+            else
+              echo "Container alta-ci-cd does not exist."
+            fi
+            
+            docker pull mhmmdrizki/alta-ci-cd:latest
+            
+            docker run -itd --name alta-ci-cd -p 8080:8080 mhmmdrizki/alta-ci-cd:latest
+    
