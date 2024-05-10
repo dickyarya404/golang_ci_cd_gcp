@@ -65,5 +65,5 @@ jobs:
             
             docker pull 
             
-            # docker run -itd --name alta-ci-cd -p 8080:8080 dicky882/altera
+            # docker run -itd --name alta-ci-cd -p 3000:3000 dicky882/altera
     
